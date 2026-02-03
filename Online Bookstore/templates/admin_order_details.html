@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Order Details</h2>
+
+<p><b>Order ID:</b> {{ order.OrderID }}</p>
+<p><b>User:</b> {{ order.Username }}</p>
+<p><b>Date:</b> {{ order.OrderDate }}</p>
+
+<hr>
+
+<table border="1">
+<tr>
+  <th>Book</th>
+  <th>Price</th>
+  <th>Qty</th>
+  <th>Subtotal</th>
+</tr>
+
+{% for i in items %}
+<tr>
+  <td>{{ i.Title }}</td>
+  <td>RM {{ "%.2f"|format(i.Price) }}</td>
+  <td>{{ i.Quantity }}</td>
+  <td>RM {{ "%.2f"|format(i.Subtotal) }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<hr>
+
+<p><b>Discount:</b> RM {{ "%.2f"|format(order.DiscountAmount or 0) }}</p>
+<p><b>Total Paid:</b> RM {{ "%.2f"|format(order.TotalAmount) }}</p>
+
+<a href="/admin/orders">← Back to Orders</a>
+
+{% endblock %}

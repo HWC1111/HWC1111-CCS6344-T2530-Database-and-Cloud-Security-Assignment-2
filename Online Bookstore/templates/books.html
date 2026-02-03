@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Available Books</h2>
+
+{% for b in books %}
+<div class="book">
+    <div>
+        <b>{{ b.Title }}</b><br>
+        <small>{{ b.Author }}</small>
+    </div>
+
+    <div>
+        RM {{ "%.2f"|format(b.Price) }}
+
+        {% if session.get("role") == "User" and b.Stock > 0 %}
+            <a class="btn" href="/add_to_cart/{{ b.BookID }}">Add</a>
+        {% elif b.Stock == 0 %}
+            <span style="color:red;">Out of Stock</span>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}

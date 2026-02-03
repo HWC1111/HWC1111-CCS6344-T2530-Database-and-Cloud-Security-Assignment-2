@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>My Order History</h2>
+
+{% if orders %}
+    {% for o in orders %}
+        <p>
+            Order #{{ o.OrderID }} |
+            {{ o.OrderDate }} |
+            RM{{ o.TotalAmount }}
+            {% if o.DiscountAmount and o.DiscountAmount > 0 %}
+                (Discount: RM{{ o.DiscountAmount }})
+            {% endif %}
+        </p>
+    {% endfor %}
+{% else %}
+    <p>No orders yet.</p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post">
+<input name="title" placeholder="Title">
+<input name="author" placeholder="Author">
+<input name="price" placeholder="Price">
+<input name="stock" placeholder="Stock">
+<button>Add</button>
+</form>
+
+<hr>
+{% for b in books %}
+<p>{{ b.Title }}</p>
+{% endfor %}
+{% endblock %}

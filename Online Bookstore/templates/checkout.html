@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Checkout</h2>
+
+{% for book, qty, subtotal in items %}
+<p>{{ book.Title }} x {{ qty }} = RM{{ "%.2f"|format(subtotal) }}</p>
+{% endfor %}
+
+<hr>
+
+<p>Total: RM{{ "%.2f"|format(total) }}</p>
+
+{% if discount > 0 %}
+<p><b>Member Discount: -RM{{ "%.2f"|format(discount) }}</b></p>
+{% endif %}
+
+<h3>Final Total: RM{{ "%.2f"|format(final_total) }}</h3>
+
+<hr>
+
+<h3>Payment Details</h3>
+
+<form method="post">
+    <div>
+        <label>Card Number</label><br>
+        <input type="text"
+               name="card_num"
+               required
+               placeholder="123412341234">
+    </div>
+
+    <div>
+        <label>Expiry Month</label><br>
+        <input type="text"
+               name="exp_m"
+               required
+               placeholder="MM">
+    </div>
+
+    <div>
+        <label>Expiry Year</label><br>
+        <input type="text"
+               name="exp_y"
+               required
+               placeholder="YYYY">
+    </div>
+
+    <br>
+    <button type="submit">Confirm Order</button>
+</form>
+
+{% endblock %}

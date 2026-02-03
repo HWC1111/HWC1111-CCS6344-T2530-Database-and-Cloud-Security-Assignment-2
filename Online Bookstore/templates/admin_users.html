@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+{% for u in users %}
+<p>{{ u.Username }} – {{ u.Role }}</p>
+{% endfor %}
+{% endblock %}

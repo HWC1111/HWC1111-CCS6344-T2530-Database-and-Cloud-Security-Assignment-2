@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Your Cart</h2>
+
+<table>
+<tr>
+    <th>Book</th>
+    <th>Qty</th>
+    <th>Subtotal</th>
+    <th></th>
+</tr>
+
+{% for b, q, s in items %}
+<tr>
+    <td>{{ b.Title }}</td>
+    <td>{{ q }}</td>
+    <td>RM {{ "%.2f"|format(s) }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<h3>Total: RM {{ "%.2f"|format(total) }}</h3>
+<br>
+<a class="btn" href="/checkout">Checkout</a>
+
+{% endblock %}

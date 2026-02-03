@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Secure Online Bookstore Infrastructure for Sandbox'
+
+Parameters:
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Password for RDS Admin
+    Default: 'StrongAdminPass123!'
+
+Resources:
+  # 1. NETWORK (VPC)
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: BookstoreVPC}]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-east-1a
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1a
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: us-east-1b
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # 2. SECURITY GROUPS
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and SSH
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SQL from Web Server only
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+
+  # 3. DATABASE (RDS)
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for RDS
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  MyDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: sqlserver-ex
+      EngineVersion: 15.00.4043.16.v1
+      DBInstanceClass: db.t3.small
+      AllocatedStorage: 20
+      StorageEncrypted: true
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups: 
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+
+  # 4. WEB SERVER (EC2)
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c7217cdde317cfec # Ubuntu 22.04 LTS in us-east-1
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: 
+        - !Ref WebSecurityGroup
+      IamInstanceProfile: LabInstanceProfile # Required by Sandbox
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update
+          apt-get install -y python3-pip unixodbc-dev curl gnupg
+          
+          # Install MS ODBC Driver
+          curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list
+          apt-get update
+          ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools
+          
+          # Clone Repo
+          git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /home/ubuntu/app
+          cd /home/ubuntu/app
+          
+          # Install Python Deps
+          pip3 install flask pyodbc python-dotenv werkzeug
+          
+          # Create .env file dynamically
+          echo "FLASK_SECRET_KEY=CloudSecretKey" > .env
+          echo "DB_SERVER=${MyDatabase.Endpoint.Address}" >> .env
+          echo "DB_NAME=OnlineBookstore" >> .env
+          echo "DB_USER=OnlineBookstoreApp" >> .env
+          echo "DB_PASSWORD=AppPassword123!" >> .env
+          
+          # Start App (Simple background run)
+          nohup python3 app.py &
+
+Outputs:
+  WebURL:
+    Description: URL of the Bookstore
+    Value: !Sub "http://${WebServer.PublicIp}"
+  DBEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt MyDatabase.Endpoint.Address

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Become a Member</h2>
+<p>Members enjoy <b>10% discount</b> on every purchase.</p>
+
+<form method="post">
+    <label>Full Name</label><br>
+    <input name="fullname" required><br><br>
+
+    <label>IC Number</label><br>
+    <input name="ic" required><br><br>
+
+    <label>Email</label><br>
+    <input type="email" name="email" required><br><br>
+
+    <button type="submit">Register Membership</button>
+</form>
+
+{% endblock %}

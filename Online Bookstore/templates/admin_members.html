@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Member List</h2>
+
+{% if members %}
+<table border="1" cellpadding="8">
+    <tr>
+        <th>Username</th>
+        <th>Full Name</th>
+        <th>Email</th>
+    </tr>
+
+    {% for m in members %}
+    <tr>
+        <td>{{ m.Username }}</td>
+        <td>{{ m.FullName }}</td>
+        <td>{{ m.Email }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No members found.</p>
+{% endif %}
+
+{% endblock %}
