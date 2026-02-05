@@ -367,5 +367,6 @@ def admin_order_details(order_id):
         cursor.close()
 
 # MAIN
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80, debug=True)
+
