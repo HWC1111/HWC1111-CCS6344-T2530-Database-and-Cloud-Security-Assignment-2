@@ -4,15 +4,15 @@ import db
 conn = db.get_connection()
 cursor = conn.cursor()
 
-username = "superadmin"
 password = "admin123"
+password_hash = generate_password_hash(password)
 
 cursor.execute(
-    "EXEC Application.sp_CreateAdmin ?, ?",
-    (username, generate_password_hash(password))
+    "EXEC Application.sp_CreateAdmin ?",
+    (password_hash,)
 )
 
 conn.commit()
 conn.close()
 
-print("Admin created:", username)
+print("Admin created: admin")
