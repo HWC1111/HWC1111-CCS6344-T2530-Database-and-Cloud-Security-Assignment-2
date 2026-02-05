@@ -1,37 +1,4 @@
-USE master;
-GO
-
--- 1. CLEANUP (Reset DB if retrying)
-IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'OnlineBookstore')
-BEGIN
-    ALTER DATABASE OnlineBookstore SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-    DROP DATABASE OnlineBookstore;
-END
-GO
-
--- 2. CREATE DATABASE
-CREATE DATABASE OnlineBookstore;
-GO
-
 USE OnlineBookstore;
-GO
-
--- 3. ENABLE TDE (Encryption at Rest)
-CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'StrongMasterKeyPassword123!';
-GO
-
-USE master;
-GO
-CREATE CERTIFICATE BookstoreTDECert WITH SUBJECT = 'TDE Certificate';
-GO
-
-USE OnlineBookstore;
-GO
-CREATE DATABASE ENCRYPTION KEY
-WITH ALGORITHM = AES_256
-ENCRYPTION BY SERVER CERTIFICATE BookstoreTDECert;
-GO
-ALTER DATABASE OnlineBookstore SET ENCRYPTION ON;
 GO
 
 -- 4. CREATE TABLES & SCHEMA
@@ -109,6 +76,7 @@ CREATE TABLE Sales.Payments (
 GO
 
 -- 5. COLUMN ENCRYPTION SETUP
+-- (This creates keys INSIDE the DB, distinct from the TDE keys we created manually)
 CREATE CERTIFICATE PaymentCert WITH SUBJECT = 'Payment Data Encryption';
 GO
 CREATE SYMMETRIC KEY PaymentKey WITH ALGORITHM = AES_256 ENCRYPTION BY CERTIFICATE PaymentCert;
