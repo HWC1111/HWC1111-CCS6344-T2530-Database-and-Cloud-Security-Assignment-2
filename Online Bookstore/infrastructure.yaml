@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Sandbox Lab: EC2-Based Secure Architecture (Bypassing RDS Limits)'
+Description: 'Fixed Sandbox Lab: DB in Protected Public Subnet for Install Access'
 
 Resources:
   # --- NETWORK ---
@@ -27,15 +27,7 @@ Resources:
       CidrBlock: 10.0.1.0/24
       MapPublicIpOnLaunch: true
       AvailabilityZone: us-east-1a
-      Tags: [{Key: Name, Value: Public Web Subnet}]
-
-  PrivateSubnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MyVPC
-      CidrBlock: 10.0.2.0/24
-      AvailabilityZone: us-east-1a
-      Tags: [{Key: Name, Value: Private DB Subnet}]
+      Tags: [{Key: Name, Value: Public Subnet}]
 
   # --- ROUTING ---
   PublicRouteTable:
@@ -56,11 +48,11 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref PublicRouteTable
 
-  # --- SECURITY GROUPS ---
+  # --- SECURITY GROUPS (The Real Protection) ---
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP and SSH
+      GroupDescription: Allow HTTP and SSH from Internet
       VpcId: !Ref MyVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -75,9 +67,10 @@ Resources:
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow SQL from Web Server only
+      GroupDescription: Allow SQL only from Web Server (Strict!)
       VpcId: !Ref MyVPC
       SecurityGroupIngress:
+        # ONLY allows traffic from the Web Server. No Public Internet access allowed Inbound.
         - IpProtocol: tcp
           FromPort: 1433
           ToPort: 1433
@@ -87,13 +80,13 @@ Resources:
           ToPort: 22
           SourceSecurityGroupId: !Ref WebSecurityGroup
 
-  # --- DATABASE SERVER (EC2 running SQL Server on Linux) ---
+  # --- DATABASE SERVER (Now in Public Subnet for Install Access) ---
   DBServer:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t3.small # Required for SQL Server (2GB RAM)
+      InstanceType: t3.small
       ImageId: ami-0c7217cdde317cfec # Ubuntu 22.04
-      SubnetId: !Ref PrivateSubnet
+      SubnetId: !Ref PublicSubnet # <--- MOVED TO PUBLIC FOR INTERNET
       SecurityGroupIds: 
         - !Ref DBSecurityGroup
       KeyName: vockey
@@ -102,18 +95,18 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # 1. Install SQL Server 2019
+          # Now this will work because we have Internet!
           wget -qO- https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           sudo add-apt-repository "$(wget -qO- https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list)"
           sudo apt-get update
           sudo apt-get install -y mssql-server
           
-          # 2. Configure SQL Server (Set SA Password silently)
+          # Configure SQL Server silently
           sudo MSSQL_SA_PASSWORD='StrongAdminPass123!' \
                MSSQL_PID='express' \
                /opt/mssql/bin/mssql-conf -n setup accept-eula
 
-          # 3. Create Audit Directory (Equivalent to C:\SQL_Audit)
+          # Create Audit Directory
           sudo mkdir -p /var/opt/mssql/audit
           sudo chown mssql:mssql /var/opt/mssql/audit
 
