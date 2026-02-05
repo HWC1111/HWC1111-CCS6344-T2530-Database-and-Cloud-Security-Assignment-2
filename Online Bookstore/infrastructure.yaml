@@ -1,15 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Secure Online Bookstore Infrastructure for Sandbox'
-
-Parameters:
-  DBPassword:
-    Type: String
-    NoEcho: true
-    Description: Password for RDS Admin
-    Default: 'StrongAdminPass123!'
+Description: 'Sandbox Lab: EC2-Based Secure Architecture (Bypassing RDS Limits)'
 
 Resources:
-  # 1. NETWORK (VPC)
+  # --- NETWORK ---
   MyVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -34,21 +27,17 @@ Resources:
       CidrBlock: 10.0.1.0/24
       MapPublicIpOnLaunch: true
       AvailabilityZone: us-east-1a
+      Tags: [{Key: Name, Value: Public Web Subnet}]
 
-  PrivateSubnet1:
+  PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.2.0/24
       AvailabilityZone: us-east-1a
+      Tags: [{Key: Name, Value: Private DB Subnet}]
 
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MyVPC
-      CidrBlock: 10.0.3.0/24
-      AvailabilityZone: us-east-1b
-
+  # --- ROUTING ---
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -67,7 +56,7 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref PublicRouteTable
 
-  # 2. SECURITY GROUPS
+  # --- SECURITY GROUPS ---
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -93,74 +82,58 @@ Resources:
           FromPort: 1433
           ToPort: 1433
           SourceSecurityGroupId: !Ref WebSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref WebSecurityGroup
 
-  # 3. DATABASE (RDS)
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
+  # --- DATABASE SERVER (EC2 running SQL Server on Linux) ---
+  DBServer:
+    Type: AWS::EC2::Instance
     Properties:
-      DBSubnetGroupDescription: Subnets for RDS
-      SubnetIds: 
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-
-  MyDatabase:
-    Type: AWS::RDS::DBInstance
-    Properties:
-      Engine: sqlserver-ex
-      EngineVersion: 15.00.4043.16.v1
-      DBInstanceClass: db.t3.small
-      AllocatedStorage: 20
-      StorageEncrypted: true
-      MasterUsername: admin
-      MasterUserPassword: !Ref DBPassword
-      VPCSecurityGroups: 
+      InstanceType: t3.small # Required for SQL Server (2GB RAM)
+      ImageId: ami-0c7217cdde317cfec # Ubuntu 22.04
+      SubnetId: !Ref PrivateSubnet
+      SecurityGroupIds: 
         - !Ref DBSecurityGroup
-      DBSubnetGroupName: !Ref DBSubnetGroup
-      PubliclyAccessible: false
+      KeyName: vockey
+      IamInstanceProfile: LabInstanceProfile
+      Tags: [{Key: Name, Value: BookstoreDBServer}]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # 1. Install SQL Server 2019
+          wget -qO- https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          sudo add-apt-repository "$(wget -qO- https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list)"
+          sudo apt-get update
+          sudo apt-get install -y mssql-server
+          
+          # 2. Configure SQL Server (Set SA Password silently)
+          sudo MSSQL_SA_PASSWORD='StrongAdminPass123!' \
+               MSSQL_PID='express' \
+               /opt/mssql/bin/mssql-conf -n setup accept-eula
 
-  # 4. WEB SERVER (EC2)
+          # 3. Create Audit Directory (Equivalent to C:\SQL_Audit)
+          sudo mkdir -p /var/opt/mssql/audit
+          sudo chown mssql:mssql /var/opt/mssql/audit
+
+  # --- WEB SERVER ---
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t2.micro
-      ImageId: ami-0c7217cdde317cfec # Ubuntu 22.04 LTS in us-east-1
+      ImageId: ami-0c7217cdde317cfec
       SubnetId: !Ref PublicSubnet
       SecurityGroupIds: 
         - !Ref WebSecurityGroup
-      IamInstanceProfile: LabInstanceProfile # Required by Sandbox
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          apt-get update
-          apt-get install -y python3-pip unixodbc-dev curl gnupg
-          
-          # Install MS ODBC Driver
-          curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
-          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list
-          apt-get update
-          ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools
-          
-          # Clone Repo
-          git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /home/ubuntu/app
-          cd /home/ubuntu/app
-          
-          # Install Python Deps
-          pip3 install flask pyodbc python-dotenv werkzeug
-          
-          # Create .env file dynamically
-          echo "FLASK_SECRET_KEY=CloudSecretKey" > .env
-          echo "DB_SERVER=${MyDatabase.Endpoint.Address}" >> .env
-          echo "DB_NAME=OnlineBookstore" >> .env
-          echo "DB_USER=OnlineBookstoreApp" >> .env
-          echo "DB_PASSWORD=AppPassword123!" >> .env
-          
-          # Start App (Simple background run)
-          nohup python3 app.py &
+      KeyName: vockey
+      IamInstanceProfile: LabInstanceProfile
+      Tags: [{Key: Name, Value: BookstoreWebServer}]
 
 Outputs:
-  WebURL:
-    Description: URL of the Bookstore
-    Value: !Sub "http://${WebServer.PublicIp}"
-  DBEndpoint:
-    Description: RDS Endpoint
-    Value: !GetAtt MyDatabase.Endpoint.Address
+  WebServerIP:
+    Description: Public IP of Web Server
+    Value: !GetAtt WebServer.PublicIp
+  DBPrivateIP:
+    Description: Private IP of Database (Use this in .env)
+    Value: !GetAtt DBServer.PrivateIp
