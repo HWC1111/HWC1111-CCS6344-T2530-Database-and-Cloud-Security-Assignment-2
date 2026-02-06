@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Fixed Sandbox Lab: DB in Protected Public Subnet for Install Access'
+Description: 'Secure Bookstore: 2-Tier Architecture with HTTPS, S3 Encryption, and Fail2Ban'
 
 Resources:
   # --- NETWORK ---
@@ -48,16 +48,20 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref PublicRouteTable
 
-  # --- SECURITY GROUPS (The Real Protection) ---
+  # --- SECURITY GROUPS ---
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP and SSH from Internet
+      GroupDescription: Allow HTTP, HTTPS and SSH from Internet
       VpcId: !Ref MyVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443   # <--- ADDED: HTTPS Support
+          ToPort: 443
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 22
@@ -67,7 +71,7 @@ Resources:
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow SQL only from Web Server (Strict!)
+      GroupDescription: Allow SQL only from Web Server (Strict Isolation)
       VpcId: !Ref MyVPC
       SecurityGroupIngress:
         # ONLY allows traffic from the Web Server. No Public Internet access allowed Inbound.
@@ -80,13 +84,28 @@ Resources:
           ToPort: 22
           SourceSecurityGroupId: !Ref WebSecurityGroup
 
-  # --- DATABASE SERVER (Now in Public Subnet for Install Access) ---
+  # --- STORAGE (S3 Encrypted Backup) ---
+  SecureBackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "bookstore-backup-${AWS::AccountId}" # Unique Name
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256  # <--- ADDED: Enforced Encryption
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # --- DATABASE SERVER ---
   DBServer:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.small
       ImageId: ami-0c7217cdde317cfec # Ubuntu 22.04
-      SubnetId: !Ref PublicSubnet # <--- MOVED TO PUBLIC FOR INTERNET
+      SubnetId: !Ref PublicSubnet
       SecurityGroupIds: 
         - !Ref DBSecurityGroup
       KeyName: vockey
@@ -95,18 +114,22 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Now this will work because we have Internet!
+          # 1. Install SQL Server Dependencies
           wget -qO- https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           sudo add-apt-repository "$(wget -qO- https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2019.list)"
           sudo apt-get update
-          sudo apt-get install -y mssql-server
+          sudo apt-get install -y mssql-server fail2ban # <--- ADDED: Fail2Ban
+
+          # 2. Configure Fail2Ban
+          sudo systemctl enable fail2ban
+          sudo systemctl start fail2ban
           
-          # Configure SQL Server silently
+          # 3. Configure SQL Server silently
           sudo MSSQL_SA_PASSWORD='StrongAdminPass123!' \
                MSSQL_PID='express' \
                /opt/mssql/bin/mssql-conf -n setup accept-eula
 
-          # Create Audit Directory
+          # 4. Create Audit Directory
           sudo mkdir -p /var/opt/mssql/audit
           sudo chown mssql:mssql /var/opt/mssql/audit
 
@@ -122,11 +145,28 @@ Resources:
       KeyName: vockey
       IamInstanceProfile: LabInstanceProfile
       Tags: [{Key: Name, Value: BookstoreWebServer}]
+      UserData: # <--- ADDED: Auto-install Dependencies
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt-get update
+          
+          # 1. Install Security & App Dependencies
+          sudo apt-get install -y python3-pip unixodbc-dev awscli fail2ban
+          
+          # 2. Start Host Security (IDS)
+          sudo systemctl enable fail2ban
+          sudo systemctl start fail2ban
+          
+          # 3. Install Python Libraries
+          sudo pip3 install flask pyodbc boto3
 
 Outputs:
   WebServerIP:
     Description: Public IP of Web Server
     Value: !GetAtt WebServer.PublicIp
   DBPrivateIP:
-    Description: Private IP of Database (Use this in .env)
+    Description: Private IP of Database (Use this in SSM Parameter Store)
     Value: !GetAtt DBServer.PrivateIp
+  S3BucketName:
+    Description: Encrypted Backup Bucket
+    Value: !Ref SecureBackupBucket
